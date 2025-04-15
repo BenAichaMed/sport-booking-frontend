@@ -6,7 +6,6 @@ import { ArrowRight, Mail, Lock, User, Github } from 'lucide-react';
 
 const Login = () => {
   const [form, setForm] = useState({email: "", password: "" });
-  console.log(form)
   const navigate = useNavigate();
 
   const onSwitch = () => {
@@ -37,7 +36,8 @@ const Login = () => {
       }
 
       const data = await res.json();
-      localStorage.setItem("token", data.token);
+      localStorage.setItem("token", JSON.stringify(data.token)); 
+
       navigate("/");
     } catch (error) {
       console.log(error.message);

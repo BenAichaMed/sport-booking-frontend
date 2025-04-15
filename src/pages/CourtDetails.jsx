@@ -1,48 +1,174 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
-import { format } from 'date-fns';
-import { Calendar, Clock, DollarSign, MapPin,Star,Phone,Shield,User } from 'lucide-react';
+import { LocalizationProvider, DatePicker } from "@mui/x-date-pickers";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+import {
+  Calendar,
+  Clock,
+  DollarSign,
+  MapPin,
+  Star,
+  Phone,
+  Shield,
+  User,
+} from "lucide-react";
 import Loader from "../components/Loader";
+import { TextField, Button } from "@mui/material";
+import dayjs from "dayjs";
+import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
+
+dayjs.extend(isSameOrAfter);
 
 const CourtDetails = () => {
   const { courtId } = useParams();
   const [court, setCourt] = useState(null);
-  const [selectedDate, setSelectedDate] = useState('');
-  const [selectedTime, setSelectedTime] = useState('');
+  const [selectedDate, setSelectedDate] = useState(dayjs());
+  const [booked, setBooked] = useState(false);
+  const [selectedTime, setSelectedTime] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [reviews, setReviews] = useState([]);
+  const [newReview, setNewReview] = useState("");
+  const [rating, setRating] = useState(0);
+  const [averageRating, setAverageRating] = useState(0);
+
+  const navigate = useNavigate();
 
   useEffect(() => {
-    const fetchCourt = async () => {
+    const fetchCourtDetails = async () => {
+      setLoading(true);
       try {
-        const res = await axios.get(`http://localhost:5000/api/courts/${courtId}`);
+        const res = await axios.get(
+          `http://localhost:5000/api/courts/${courtId}`
+        );
         setCourt(res.data.court);
+
+        const reviewsRes = await axios.get(
+          `http://localhost:5000/api/reviews/${courtId}`
+        );
+        setReviews(reviewsRes.data.reviews);
+        setAverageRating(reviewsRes.data.averageRating);
       } catch (error) {
-        console.log(error);
+        console.error("Error fetching data:", error);
+      } finally {
+        setLoading(false);
       }
     };
-    fetchCourt();
-  }, [courtId]);
 
-  if (!court) {
-    return <div><Loader/></div>;
-  }
+    fetchCourtDetails();
+  }, [courtId, booked, averageRating]);
 
-  const availableDates = court.availability?.map(a => a.date) || [];
-  const selectedDateSlots = court.availability?.find(a => a.date === selectedDate)?.timeSlots || [];
-
-  const handleBooking = () => {
-    if (!selectedTime) {
-      alert('Please select a time slot');
+  const handleReviewSubmit = async () => {
+    const token = JSON.parse(localStorage.getItem("token"));
+    if (!token) {
+      alert("Please log in to add a review.");
       return;
     }
-    alert(`Booking confirmed for ${selectedDate} at ${selectedTime}`);
+
+    if (!newReview.trim() || rating === 0) {
+      alert("Please provide a review and rating.");
+      return;
+    }
+
+    try {
+      const res = await axios.post(
+        "http://localhost:5000/api/reviews/add",
+        {
+          courtId,
+          rating,
+          comment: newReview,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      setReviews((prevReviews) => [...(prevReviews || []), res.data.review]);
+      setNewReview("");
+      setRating(0);
+    } catch (error) {
+      console.error(
+        "Error adding review:",
+        error.response?.data || error.message
+      );
+      alert("Failed to add review. Try again.");
+    }
   };
-  const handleSelectDate = (date) => {
-    setSelectedDate(date);
-    setSelectedTime('');
-    
+
+  if (loading || !court) {
+    return <Loader />;
   }
 
+  const today = dayjs().startOf("day");
+  const availableDates =
+    court.availability
+      ?.map((a) => dayjs(a.date))
+      .filter((date) => date.isSameOrAfter(today)) || [];
+
+  const selectedDateSlots =
+    court.availability
+      ?.find((a) => dayjs(a.date).isSame(selectedDate, "day"))
+      ?.timeSlots.filter((time) => {
+        if (dayjs(selectedDate).isSame(dayjs(), "day")) {
+          const [hours] = time.split(":").map(Number);
+          const currentHour = dayjs().hour();
+          return hours > currentHour;
+        }
+        return true;
+      }) || [];
+
+  // const selectedDateSlots = court.availability ?.find((a) => dayjs(a.date).isSame(selectedDate, 'day'))?.timeSlots || [];
+
+  const shouldDisableDate = (date) => {
+    return !availableDates.some((availableDate) =>
+      date.isSame(availableDate, "day")
+    );
+  };
+
+  const handleBooking = async () => {
+    if (!selectedTime) {
+      alert("Please select a time slot");
+      return;
+    }
+
+    const token = JSON.parse(localStorage.getItem("token"));
+    if (!token) {
+      alert("Please log in to book");
+      return;
+    }
+
+    const bookingDetails = {
+      courtId,
+      date: selectedDate.format("YYYY-MM-DD"),
+      timeSlot: selectedTime,
+    };
+
+    try {
+      await axios.post(
+        `http://localhost:5000/api/bookings/create`,
+        bookingDetails,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      setBooked(true);
+      navigate("/mybookings");
+    } catch (error) {
+      console.error("Error creating booking:", error);
+      alert("Booking failed. Please try again.");
+    }
+  };
+
+  const handleSelectDate = (date) => {
+    setSelectedDate(date);
+    setSelectedTime("");
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 py-12">
@@ -60,12 +186,18 @@ const CourtDetails = () => {
                 {[...Array(5)].map((_, i) => (
                   <Star
                     key={i}
-                    className={`w-5 h-5 ${i < Math.floor(court.rating) ? 'text-yellow-400 fill-current' : 'text-gray-400'}`}
+                    className={`w-5 h-5 ${
+                      i < Math.floor(averageRating)
+                        ? "text-yellow-400 fill-current"
+                        : "text-gray-400"
+                    }`}
                   />
                 ))}
-                <span className="text-white ml-2">{court.rating.toFixed(1)}</span>
+                <span className="text-white ml-2">{averageRating}</span>
               </div>
-              <h1 className="text-4xl font-bold text-white mb-2">{court.name}</h1>
+              <h1 className="text-4xl font-bold text-white mb-2">
+                {court.name}
+              </h1>
               <div className="flex items-center text-white gap-4 flex-wrap">
                 <span className="flex items-center">
                   <MapPin className="w-5 h-5 mr-2" />
@@ -92,22 +224,20 @@ const CourtDetails = () => {
                   <Calendar className="w-5 h-5 mr-2" />
                   Select Date
                 </h3>
-                <div className="grid grid-cols-3 gap-3">
-                  {availableDates.map((date) => (
-                    <button
-                      key={date}
-                      onClick={() => handleSelectDate(date)}
-                      className={`p-3 rounded-lg text-center transition-colors ${
-                        selectedDate === date
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 hover:bg-gray-200'
-                      }`}
-                    >
-                      <div className="font-semibold">{format(new Date(date), 'MMM d')}</div>
-                      <div className="text-sm">{format(new Date(date), 'EEEE')}</div>
-                    </button>
-                  ))}
-                </div>
+                <LocalizationProvider dateAdapter={AdapterDayjs}>
+                  <DatePicker
+                    label="Select Date"
+                    value={selectedDate}
+                    onChange={handleSelectDate}
+                    shouldDisableDate={shouldDisableDate}
+                    format="DD/MM/YYYY"
+                    slots={{
+                      textField: (params) => (
+                        <TextField {...params} fullWidth />
+                      ),
+                    }}
+                  />
+                </LocalizationProvider>
               </div>
 
               {/* Time Selection */}
@@ -117,14 +247,19 @@ const CourtDetails = () => {
                   Select Time
                 </h3>
                 <div className="grid grid-cols-3 gap-3">
+                  {selectedDateSlots.length === 0 && (
+                    <div className="col-span-3 text-center text-gray-500">
+                      No available time for this date.
+                    </div>
+                  )}
                   {selectedDateSlots.map((time) => (
                     <button
                       key={time}
                       onClick={() => setSelectedTime(time)}
                       className={`p-3 rounded-lg text-center transition-colors ${
                         selectedTime === time
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 hover:bg-gray-200'
+                          ? "bg-blue-600 text-white"
+                          : "bg-gray-100 hover:bg-gray-200"
                       }`}
                     >
                       {time}
@@ -140,16 +275,21 @@ const CourtDetails = () => {
                 <div>
                   {selectedDate && selectedTime && (
                     <div className="text-lg">
-                      Selected: <span className="font-semibold">{format(new Date(selectedDate), 'MMMM d')} at {selectedTime}</span>
+                      Selected:{" "}
+                      <span className="font-semibold">
+                        {selectedDate.format("MMMM D")} at {selectedTime}
+                      </span>
                     </div>
                   )}
                 </div>
-                <button
+                <Button
                   onClick={handleBooking}
-                  className="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-lg transition duration-300"
+                  variant="contained"
+                  color="success"
+                  className="font-bold py-3 px-8 rounded-lg transition duration-300"
                 >
                   Book Now
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -162,10 +302,10 @@ const CourtDetails = () => {
             <div className="bg-white rounded-xl shadow-lg p-6">
               <h2 className="text-2xl font-bold mb-4">About this Court</h2>
               <p className="text-gray-600 mb-6">{court.description}</p>
-              
+
               <h3 className="font-semibold text-lg mb-4">Amenities</h3>
               <div className="grid grid-cols-2 gap-4">
-                {court.amenties.map((amenity, index) => (
+                {court.amenities.map((amenity, index) => (
                   <div key={index} className="flex items-center text-gray-600">
                     <Shield className="w-5 h-5 mr-2 text-green-500" />
                     {amenity}
@@ -177,28 +317,74 @@ const CourtDetails = () => {
             {/* Reviews Section */}
             <div className="bg-white rounded-xl shadow-lg p-6">
               <h2 className="text-2xl font-bold mb-6">Reviews</h2>
+
+              {/* Display Existing Reviews */}
               <div className="space-y-6">
-                {court.reviews.map((review, index) => (
-                  <div key={index} className="border-b last:border-b-0 pb-6 last:pb-0">
-                    <div className="flex items-center mb-3">
-                      <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                        <User className="w-6 h-6 text-blue-600" />
-                      </div>
-                      <div className="ml-3">
-                        <h4 className="font-semibold">{review.user}</h4>
-                        <div className="flex items-center">
-                          {[...Array(5)].map((_, i) => (
-                            <Star
-                              key={i}
-                              className="w-4 h-4 text-yellow-400 fill-current"
-                            />
-                          ))}
+                {reviews && reviews.length > 0 ? (
+                  reviews.map((review, index) => (
+                    <div
+                      key={index}
+                      className="border-b last:border-b-0 pb-6 last:pb-0"
+                    >
+                      <div className="flex items-center mb-3">
+                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                          <User className="w-6 h-6 text-blue-600" />
+                        </div>
+                        <div className="ml-3">
+                          <h4 className="font-semibold">
+                            {review.userId.name || "Anonymous"}
+                          </h4>
+                          <div className="flex items-center">
+                            {[...Array(5)].map((_, i) => (
+                              <Star
+                                key={i}
+                                className={`w-4 h-4 ${
+                                  i < review.rating
+                                    ? "text-yellow-400"
+                                    : "text-gray-300"
+                                } fill-current`}
+                              />
+                            ))}
+                          </div>
                         </div>
                       </div>
+                      <p className="text-gray-600">{review.comment}</p>
                     </div>
-                    <p className="text-gray-600">{review.review}</p>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <p className="text-gray-500 italic">No reviews yet.</p>
+                )}
+              </div>
+
+              {/* Add Review Form */}
+              <div className="mt-6 border-t pt-6">
+                <h3 className="text-xl font-semibold mb-4">Leave a Review</h3>
+                <textarea
+                  className="w-full border rounded-lg p-3 mb-4"
+                  placeholder="Write your review here..."
+                  value={newReview}
+                  onChange={(e) => setNewReview(e.target.value)}
+                />
+                <div className="flex items-center gap-2 mb-4">
+                  {[...Array(5)].map((_, i) => (
+                    <Star
+                      key={i}
+                      className={`w-6 h-6 cursor-pointer ${
+                        i < rating
+                          ? "text-yellow-400 fill-current"
+                          : "text-gray-400"
+                      }`}
+                      onClick={() => setRating(i + 1)}
+                    />
+                  ))}
+                </div>
+                <Button
+                  onClick={handleReviewSubmit}
+                  variant="contained"
+                  color="primary"
+                >
+                  Submit Review
+                </Button>
               </div>
             </div>
           </div>
