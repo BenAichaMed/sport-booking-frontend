@@ -27,17 +27,86 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        <Route path="/profile" element={<ProfilePage />} />
-        <Route path="/mybookings" element={<MyBookings />} />
-        <Route path="/bookings/:bookingId" element={<BookingDetails />} />
-        <Route path="/courts/:courtId" element={<CourtDetail />} />
-        <Route path="/courts/add" element={<AddCourt />} />
-        <Route path="/courts/list" element={<ListCourts />} />
-        <Route path ="/payment" element={<Payment />} />
-        <Route path="/admin" element={<AdminDashboard />} />
-        <Route path="/owner" element={<OwnerDashboard />} />
-        <Route path="/edit/:courtId" element={<EditCourt />} />
-        
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute allowedRoles={["user", "owner", "admin"]}>
+              <ProfilePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/mybookings"
+          element={
+            <ProtectedRoute allowedRoles={["user", "owner", "admin"]}>
+              <MyBookings />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/bookings/:bookingId"
+          element={
+            <ProtectedRoute allowedRoles={["user", "owner", "admin"]}>
+              <BookingDetails />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/courts/:courtId"
+          element={
+            <ProtectedRoute allowedRoles={["user", "owner", "admin"]}>
+              <CourtDetail />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/courts/add"
+          element={
+            <ProtectedRoute allowedRoles={["owner"]}>
+              <AddCourt />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/courts/list"
+          element={
+            <ProtectedRoute allowedRoles={["owner"]}>
+              <ListCourts />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/payment"
+          element={
+            <ProtectedRoute allowedRoles={["user", "owner", "admin"]}>
+              <Payment />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute allowedRoles={["admin"]}>
+              <AdminDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/owner"
+          element={
+            <ProtectedRoute allowedRoles={["owner"]}>
+              <OwnerDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/edit/:courtId"
+          element={
+            <ProtectedRoute allowedRoles={["owner"]}>
+              <EditCourt />
+            </ProtectedRoute>
+          }
+        />
       </Routes>
     </>
   );
